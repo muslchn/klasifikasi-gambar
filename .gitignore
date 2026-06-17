@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+dataset/
+dataset_split/
+.ipynb_checkpoints/
+best_model.keras
+metadata.json
+training_plot.png
+
+submission/
