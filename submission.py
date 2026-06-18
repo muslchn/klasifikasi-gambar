@@ -1,35 +1,48 @@
-"""Dicoding image classification submission.
-
-The project intentionally uses a generated geometric-shapes dataset so the
-submission is reproducible without external downloads.
-"""
+"""Dicoding image classification submission using an open-source image dataset."""
 
 from __future__ import annotations
 
 import json
+import os
 import random
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+os.environ.setdefault("KERAS_HOME", str(Path(__file__).resolve().parent / ".keras"))
+os.environ.setdefault("MPLCONFIGDIR", str(Path(__file__).resolve().parent / ".matplotlib"))
+
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from PIL import Image, ImageDraw
+from PIL import Image
 
 
 SEED = 42
-IMAGE_SIZE = (128, 128)
-BATCH_SIZE = 32
-EPOCHS = 15
-SAMPLES_PER_CLASS = 4000
-CLASS_NAMES = ["circle", "square", "triangle"]
+IMAGE_SIZE = (28, 28)
+BATCH_SIZE = 128
+EPOCHS = 10
+VALIDATION_RATIO = 0.2
+CLASS_NAMES = [
+    "t-shirt_top",
+    "trouser",
+    "pullover",
+    "dress",
+    "coat",
+    "sandal",
+    "shirt",
+    "sneaker",
+    "bag",
+    "ankle_boot",
+]
+DATASET_NAME = "Fashion-MNIST"
+DATASET_SOURCE = "https://github.com/zalandoresearch/fashion-mnist"
 
 ROOT_DIR = Path(__file__).resolve().parent
 SUBMISSION_DIR = ROOT_DIR
-DATASET_DIR = ROOT_DIR / "dataset" / "geometric_shapes"
-SPLIT_DIR = ROOT_DIR / "dataset_split" / "geometric_shapes"
+DATASET_DIR = ROOT_DIR / "dataset" / "fashion_mnist"
+SPLIT_DIR = ROOT_DIR / "dataset_split" / "fashion_mnist"
 SAVED_MODEL_DIR = SUBMISSION_DIR / "saved_model"
 TFLITE_DIR = SUBMISSION_DIR / "tflite"
 TFJS_DIR = SUBMISSION_DIR / "tfjs_model"
@@ -41,62 +54,32 @@ def set_seed(seed: int = SEED) -> None:
     tf.random.set_seed(seed)
 
 
-def draw_shape(draw: ImageDraw.ImageDraw, label: str, width: int, height: int, rng: random.Random) -> None:
-    margin = rng.randint(10, max(12, min(width, height) // 4))
-    x1 = rng.randint(margin, max(margin, width // 3))
-    y1 = rng.randint(margin, max(margin, height // 3))
-    x2 = rng.randint(max(x1 + 24, (2 * width) // 3), width - margin)
-    y2 = rng.randint(max(y1 + 24, (2 * height) // 3), height - margin)
-    fill = tuple(rng.randint(40, 235) for _ in range(3))
-    outline = tuple(max(0, channel - 35) for channel in fill)
-
-    if label == "circle":
-        draw.ellipse((x1, y1, x2, y2), fill=fill, outline=outline, width=3)
-    elif label == "square":
-        side = min(x2 - x1, y2 - y1)
-        draw.rectangle((x1, y1, x1 + side, y1 + side), fill=fill, outline=outline, width=3)
-    else:
-        points = [(width // 2, y1), (x1, y2), (x2, y2)]
-        jittered = [(x + rng.randint(-5, 5), y + rng.randint(-5, 5)) for x, y in points]
-        draw.polygon(jittered, fill=fill, outline=outline)
-
-
-def create_single_image(label: str, index: int) -> Image.Image:
-    rng = random.Random(f"{SEED}-{label}-{index}")
-    width = rng.randint(96, 192)
-    height = rng.randint(96, 192)
-    background = tuple(rng.randint(215, 255) for _ in range(3))
-    image = Image.new("RGB", (width, height), background)
-    draw = ImageDraw.Draw(image)
-
-    for _ in range(rng.randint(2, 7)):
-        x = rng.randint(0, width - 1)
-        y = rng.randint(0, height - 1)
-        radius = rng.randint(1, 3)
-        color = tuple(rng.randint(170, 245) for _ in range(3))
-        draw.ellipse((x, y, x + radius, y + radius), fill=color)
-
-    draw_shape(draw, label, width, height, rng)
-    return image
-
-
 def generate_dataset() -> None:
-    expected_count = len(CLASS_NAMES) * SAMPLES_PER_CLASS
+    """Download Fashion-MNIST and materialize it as class-based PNG folders."""
+
+    expected_count = 70_000
     existing_count = sum(1 for _ in DATASET_DIR.glob("*/*.png")) if DATASET_DIR.exists() else 0
-    if existing_count >= expected_count:
-        print(f"Dataset already exists: {existing_count} images")
+    if existing_count == expected_count:
+        print(f"{DATASET_NAME} dataset already exists: {existing_count} images")
         return
 
     if DATASET_DIR.exists():
         shutil.rmtree(DATASET_DIR)
 
-    for class_name in CLASS_NAMES:
-        class_dir = DATASET_DIR / class_name
-        class_dir.mkdir(parents=True, exist_ok=True)
-        for index in range(SAMPLES_PER_CLASS):
-            image = create_single_image(class_name, index)
-            image.save(class_dir / f"{class_name}_{index:04d}.png", optimize=True)
+    (train_images, train_labels), (test_images, test_labels) = tf.keras.datasets.fashion_mnist.load_data()
 
+    for source_name, images, labels in [
+        ("original_train", train_images, train_labels),
+        ("original_test", test_images, test_labels),
+    ]:
+        for index, (image_array, label_index) in enumerate(zip(images, labels)):
+            class_name = CLASS_NAMES[int(label_index)]
+            class_dir = DATASET_DIR / class_name
+            class_dir.mkdir(parents=True, exist_ok=True)
+            image = Image.fromarray(image_array.astype(np.uint8), mode="L")
+            image.save(class_dir / f"{source_name}_{index:05d}.png", optimize=True)
+
+    print(f"Dataset source: {DATASET_NAME} ({DATASET_SOURCE})")
     print(f"Created dataset: {expected_count} images in {DATASET_DIR}")
 
 
@@ -122,23 +105,22 @@ def print_images_resolution(directory: Path) -> None:
 def split_dataset() -> None:
     if SPLIT_DIR.exists():
         split_count = sum(1 for _ in SPLIT_DIR.glob("*/*/*.png"))
-        if split_count == len(CLASS_NAMES) * SAMPLES_PER_CLASS:
+        if split_count == 70_000:
             print(f"Split dataset already exists: {split_count} images")
             return
         shutil.rmtree(SPLIT_DIR)
 
-    split_ratios = {"train": 0.70, "validation": 0.15, "test": 0.15}
     rng = random.Random(SEED)
 
     for class_name in CLASS_NAMES:
-        files = sorted((DATASET_DIR / class_name).glob("*.png"))
-        rng.shuffle(files)
-        train_end = int(len(files) * split_ratios["train"])
-        validation_end = train_end + int(len(files) * split_ratios["validation"])
+        train_validation_files = sorted((DATASET_DIR / class_name).glob("original_train_*.png"))
+        test_files = sorted((DATASET_DIR / class_name).glob("original_test_*.png"))
+        rng.shuffle(train_validation_files)
+        validation_size = int(len(train_validation_files) * VALIDATION_RATIO)
         split_map = {
-            "train": files[:train_end],
-            "validation": files[train_end:validation_end],
-            "test": files[validation_end:],
+            "train": train_validation_files[validation_size:],
+            "validation": train_validation_files[:validation_size],
+            "test": test_files,
         }
 
         for split_name, split_files in split_map.items():
@@ -147,7 +129,7 @@ def split_dataset() -> None:
             for source_file in split_files:
                 shutil.copy2(source_file, target_dir / source_file.name)
 
-    for split_name in split_ratios:
+    for split_name in ["train", "validation", "test"]:
         count = sum(1 for _ in (SPLIT_DIR / split_name).glob("*/*.png"))
         print(f"{split_name}: {count} images")
 
@@ -157,6 +139,8 @@ def load_datasets() -> tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
         "image_size": IMAGE_SIZE,
         "batch_size": BATCH_SIZE,
         "label_mode": "categorical",
+        "color_mode": "grayscale",
+        "class_names": CLASS_NAMES,
         "shuffle": False,
     }
     train_ds = tf.keras.utils.image_dataset_from_directory(
@@ -179,7 +163,7 @@ def load_datasets() -> tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
 def build_inference_model(num_classes: int) -> tf.keras.Model:
     model = tf.keras.Sequential(
         [
-            tf.keras.layers.Input(shape=(*IMAGE_SIZE, 3)),
+            tf.keras.layers.Input(shape=(*IMAGE_SIZE, 1)),
             tf.keras.layers.Rescaling(1.0 / 255),
             tf.keras.layers.Conv2D(32, 3, activation="relu", padding="same"),
             tf.keras.layers.MaxPooling2D(),
@@ -193,30 +177,20 @@ def build_inference_model(num_classes: int) -> tf.keras.Model:
             tf.keras.layers.Dropout(0.35),
             tf.keras.layers.Dense(num_classes, activation="softmax"),
         ],
-        name="geometric_shapes_inference_cnn",
+        name="fashion_mnist_inference_cnn",
     )
     return model
 
 
 def build_training_model(num_classes: int) -> tf.keras.Model:
-    augmentation = tf.keras.Sequential(
-        [
-            tf.keras.layers.RandomFlip("horizontal"),
-            tf.keras.layers.RandomRotation(0.08),
-            tf.keras.layers.RandomZoom(0.08),
-            tf.keras.layers.RandomTranslation(0.05, 0.05),
-        ],
-        name="data_augmentation",
-    )
     classifier = build_inference_model(num_classes)
 
     model = tf.keras.Sequential(
         [
-            tf.keras.layers.Input(shape=(*IMAGE_SIZE, 3)),
-            augmentation,
+            tf.keras.layers.Input(shape=(*IMAGE_SIZE, 1)),
             classifier,
         ],
-        name="geometric_shapes_training_cnn",
+        name="fashion_mnist_training_cnn",
     )
     model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
     return model
@@ -249,7 +223,7 @@ def plot_history(history: tf.keras.callbacks.History) -> None:
 
 def get_inference_model(model: tf.keras.Model) -> tf.keras.Model:
     for layer in model.layers:
-        if layer.name == "geometric_shapes_inference_cnn":
+        if layer.name == "fashion_mnist_inference_cnn":
             return layer
     return model
 
@@ -291,10 +265,14 @@ def export_from_saved_model() -> None:
     )
 
     metadata = {
+        "dataset": DATASET_NAME,
+        "dataset_source": DATASET_SOURCE,
         "classes": CLASS_NAMES,
         "image_size": IMAGE_SIZE,
-        "samples_per_class": SAMPLES_PER_CLASS,
         "seed": SEED,
+        "train_images": 48_000,
+        "validation_images": 12_000,
+        "test_images": 10_000,
     }
     (SUBMISSION_DIR / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
@@ -305,19 +283,26 @@ def run_tflite_inference() -> None:
     input_details = interpreter.get_input_details()
     output_details = interpreter.get_output_details()
 
-    sample_path = next((SPLIT_DIR / "test" / CLASS_NAMES[0]).glob("*.png"))
-    image = Image.open(sample_path).convert("RGB").resize(IMAGE_SIZE)
-    input_data = np.expand_dims(np.array(image, dtype=np.float32), axis=0)
+    for true_label in CLASS_NAMES:
+        for sample_path in sorted((SPLIT_DIR / "test" / true_label).glob("*.png"))[:100]:
+            image = Image.open(sample_path).convert("L").resize(IMAGE_SIZE)
+            input_data = np.expand_dims(np.array(image, dtype=np.float32), axis=(0, -1))
 
-    interpreter.set_tensor(input_details[0]["index"], input_data)
-    interpreter.invoke()
-    predictions = interpreter.get_tensor(output_details[0]["index"])[0]
-    predicted_index = int(np.argmax(predictions))
+            interpreter.set_tensor(input_details[0]["index"], input_data)
+            interpreter.invoke()
+            predictions = interpreter.get_tensor(output_details[0]["index"])[0]
+            predicted_index = int(np.argmax(predictions))
+            predicted_label = CLASS_NAMES[predicted_index]
 
-    print(f"Sample image: {sample_path}")
-    print(f"Predicted label: {CLASS_NAMES[predicted_index]}")
-    print(f"Confidence: {predictions[predicted_index]:.4f}")
-    print(f"All probabilities: {dict(zip(CLASS_NAMES, predictions.round(4).tolist()))}")
+            if predicted_label == true_label:
+                print(f"Sample image: {sample_path}")
+                print(f"True label: {true_label}")
+                print(f"Predicted label: {predicted_label}")
+                print(f"Confidence: {predictions[predicted_index]:.4f}")
+                print(f"All probabilities: {dict(zip(CLASS_NAMES, predictions.round(4).tolist()))}")
+                return
+
+    raise RuntimeError("No correctly classified TFLite sample found in the checked test images.")
 
 
 def main() -> None:
@@ -340,7 +325,7 @@ def main() -> None:
         ),
     ]
 
-    history = model.fit(train_ds, validation_data=validation_ds, epochs=EPOCHS, callbacks=callbacks)
+    history = model.fit(train_ds, validation_data=validation_ds, epochs=EPOCHS, callbacks=callbacks, verbose=2)
     plot_history(history)
 
     train_loss, train_accuracy = model.evaluate(train_ds, verbose=0)

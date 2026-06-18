@@ -1,4 +1,6 @@
 .venv/
+.keras/
+.matplotlib/
 __pycache__/
 *.pyc
 dataset/
@@ -8,4 +10,5 @@ best_model.keras
 metadata.json
 training_plot.png
 
+review/
 submission/

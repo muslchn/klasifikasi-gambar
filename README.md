@@ -1,4 +1,4 @@
-# Proyek Klasifikasi Gambar: Geometric Shapes
+# Proyek Klasifikasi Gambar: Fashion-MNIST
 
 - **Nama:** Muslichin
 - **Email:** muslichin.ach@gmail.com
@@ -6,13 +6,39 @@
 
 ## Ringkasan
 
-Proyek ini membuat model Convolutional Neural Network untuk mengklasifikasikan gambar geometri sintetis menjadi tiga kelas:
+Proyek ini membangun model Convolutional Neural Network untuk mengklasifikasikan gambar pakaian dari dataset open-source Fashion-MNIST. Dataset berasal dari Zalando Research dan dapat direproduksi melalui `tf.keras.datasets.fashion_mnist`.
 
-1. `circle`
-2. `square`
-3. `triangle`
+Sumber dataset: <https://github.com/zalandoresearch/fashion-mnist>
 
-Dataset dibuat secara reproducible dari kode Python sehingga tidak bergantung pada unduhan eksternal. Total dataset adalah 12.000 gambar dengan resolusi asli yang bervariasi, lalu dibagi menjadi train, validation, dan test set dengan rasio 70:15:15.
+Dataset berisi 70.000 gambar grayscale berukuran 28x28 piksel dengan 10 kelas:
+
+1. `t-shirt_top`
+2. `trouser`
+3. `pullover`
+4. `dress`
+5. `coat`
+6. `sandal`
+7. `shirt`
+8. `sneaker`
+9. `bag`
+10. `ankle_boot`
+
+Dataset disiapkan ulang menjadi folder gambar PNG berdasarkan kelas, lalu dibagi menjadi train, validation, dan test set:
+
+- Train: 48.000 gambar
+- Validation: 12.000 gambar
+- Test: 10.000 gambar
+
+## Hasil Terakhir
+
+Notebook dan script sudah dijalankan ulang secara berurutan. Hasil evaluasi terakhir:
+
+- Training accuracy: 0.9374
+- Testing accuracy: 0.9140
+- Training loss: 0.1737
+- Testing loss: 0.2338
+
+Model menggunakan arsitektur `Sequential` dengan layer `Conv2D`, `MaxPooling2D`, `Dropout`, `Flatten`, dan `Dense`.
 
 ## Struktur Submission
 
@@ -33,9 +59,9 @@ klasifikasi-gambar
 └── requirements.txt
 ```
 
-## Cara Menjalankan
+## Cara Menjalankan Ulang
 
-Disarankan menjalankan notebook di Google Colab dengan GPU T4.
+Gunakan Python sesuai `requirements.txt`, lalu jalankan:
 
 ```bash
 pip install -r requirements.txt
@@ -44,14 +70,14 @@ python submission.py
 
 Script akan:
 
-1. Membuat dataset gambar geometri jika belum tersedia.
+1. Mengunduh dan menyiapkan dataset Fashion-MNIST sebagai folder gambar PNG.
 2. Membagi dataset menjadi train, validation, dan test set.
-3. Melatih model Sequential CNN dengan Conv2D dan pooling layer.
+3. Melatih model Sequential CNN.
 4. Menampilkan plot akurasi dan loss.
 5. Mengevaluasi akurasi training dan testing.
-6. Menyimpan model ke format SavedModel, TFLite, dan TensorFlow.js.
-7. Melakukan inference menggunakan model TFLite.
+6. Menyimpan model ke format SavedModel, TensorFlow Lite, dan TensorFlow.js.
+7. Menjalankan inference menggunakan model TensorFlow Lite.
 
-## Catatan
+## Catatan Submission
 
-Dataset dan folder hasil split tidak wajib dikirim karena dapat dibuat ulang dari notebook/script. Folder model hasil konversi perlu disertakan setelah notebook dijalankan.
+Folder `dataset/` dan `dataset_split/` tidak perlu disertakan karena dapat dibuat ulang dari notebook/script. Folder model `saved_model/`, `tflite/`, dan `tfjs_model/` perlu disertakan setelah notebook/script dijalankan.
